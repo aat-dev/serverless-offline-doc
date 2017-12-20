@@ -183,7 +183,7 @@ class ServerlessPlugin {
         retval.paths[item.path] = {};
       }
 
-      retval.paths[item.path][item.method|| j++] = {
+      retval.paths[item.path][item.method] = {
         description,
         produces: ["application/json"],
         parameters,
