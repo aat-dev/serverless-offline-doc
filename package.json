@@ -1,0 +1,11 @@
+{
+  "name": "serverless-offline-doc",
+  "version": "1.0.0",
+  "description": "follows the serverless-aws-documentation format, but allows for local generation of a swagger api json file",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test"
+  },
+  "author": "Paul Humphreys",
+  "license": "ISC"
+}
