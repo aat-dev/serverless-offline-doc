@@ -1,56 +1,9 @@
 'use strict';
-var jsYaml = require('js-yaml');
+var yaml = require('js-yaml');
 var path = require('path');
 var _ = require('lodash');
 var fs = require('fs');
-
-var encodeCycles = arg => {
-  let currentPath = "$";
-  const seenObjectPaths = [],
-  seenObjects = [],
-  inner = arg => {
-    //don't need to recurse as it's not an object
-    if (typeof(arg) !== "object" || arg === null) {
-      return arg;
-    }
-
-    //if seen object then just return the ref
-    for (let i = seenObjects.length;i--;) {
-      if (seenObjects[i] === arg) {
-        return { "$ref" : seenObjectPaths[i] };
-      }
-    }
-
-    seenObjects.push(arg);
-    seenObjectPaths.push(currentPath);
-
-    //loop over keys
-    const clone = Array.isArray(arg) ? [] : {};
-
-    for (const prop in arg) {
-      if (typeof arg !== 'undefined' && typeof arg.hasOwnProperty === 'function' && arg.hasOwnProperty(prop)) {
-        const escaped = '[' + (String(Math.floor(Number(prop)))===prop?
-          prop
-        :
-          "'" + prop.replace("\\","\\\\").replace("'", "\\'") + "'"
-        ) + ']';
-        
-        currentPath += escaped;
-        const value = inner(arg[prop]);
-        currentPath = currentPath.slice(0, -escaped.length);
-
-        clone[prop] = value;
-      }
-    }
-
-    return clone;
-  };
-
-  return inner(arg);
-};
-
-var jsonify = arg => console.log(JSON.stringify(encodeCycles(arg), null, 2));
-
+var mkdirpSync = require('mkdirpsync');
 var template = require('./template.js');
 
 const makeObject = str => str.
@@ -90,13 +43,17 @@ class ServerlessPlugin {
         // add start nested options
         commands: {
           start: {
-            usage: 'Simulates API Gateway to call your lambda functions offline using backward compatible initialization.',
+            usage: 'Generates a local swagger v2 file from serverlees.yml annotations',
           },
         },
         options: {
           output: {
-            usage: 'The file of the file to generate. Default: ./swagger.json',
+            usage: 'The name of the file to generate. Default: openapi.json',
             shortcut: 'o',
+          },
+          format: {
+            usage: 'The type of the file to generate (json or yml). Default: json',
+            shortcut: 'f',
           },
         },
       },
@@ -111,8 +68,6 @@ class ServerlessPlugin {
     this._checkVersion();
 
     this._generateDocs();
-    return Promise.resolve();
-  
   }
 
   _checkVersion() {
@@ -130,8 +85,6 @@ class ServerlessPlugin {
         _.get(this, 'service.custom.documentation'),
         (value, key) => swaggerV2Props.hasOwnProperty(key)
       );
-
-    //fs.writeFileSync('./output.json', JSON.stringify(encodeCycles(this.serverless), null, 2));
 
     //get the header properties
     Object.assign(retval, documentation);
@@ -155,19 +108,35 @@ class ServerlessPlugin {
         retval.paths[item.path] = {};
       }
 
-      const method  = _.pickBy(
+      retval.paths[item.path][item.method] = _.pickBy(
           _.get(item, 'documentation'),
           (value, key) => methodProps.hasOwnProperty(key)
         );
-
-      retval.paths[item.path][item.method] = method;
     });
 
-    jsonify(retval);
+    const format = this.options.format || 'json';
+    let output, outputName;
 
+    if(format === 'yml') {
+      outputName = this.options.output || 'openapi.yml';
+      output = yaml.safeDump(retval);
+    }
+    else {
+      outputName = this.options.output || 'openapi.json';
+      output = JSON.stringify(retval);
+    }
+
+    var resolved = path.resolve(
+        this.serverless.config.servicePath,
+        outputName
+      );
+
+    mkdirpSync(path.dirname(resolved));
+
+    fs.writeFileSync(resolved, output);
+
+    console.log(`'${resolved}' file generated!`);
   }
 };
-
-
 
 module.exports = ServerlessPlugin;

@@ -7,5 +7,10 @@
     "test": "npm run test"
   },
   "author": "Paul Humphreys",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "js-yaml": "^3.10.0",
+    "lodash": "^4.17.4",
+    "mkdirpsync": "^0.1.0"
+  }
 }
