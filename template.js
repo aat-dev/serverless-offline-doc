@@ -1,8 +1,16 @@
 module.exports = () => { return {
-  openapi: "",
+  swagger: "2.0",
   info: {
     title: "",
-    version: ""
+    version: "",
+    security: {
+      "api_key": []
+    }
   },
-  paths: {}
+  paths: {},
+  definitions: {},
+  responses: {},
+  parameters: {},
+  securityDefinitions: {},
+  tags: []
 }};

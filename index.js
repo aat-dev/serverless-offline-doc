@@ -26,7 +26,6 @@ var encodeCycles = arg => {
 
     //loop over keys
     const clone = Array.isArray(arg) ? [] : {};
-    //let isDifferent = false;
 
     for (const prop in arg) {
       if (typeof arg !== 'undefined' && typeof arg.hasOwnProperty === 'function' && arg.hasOwnProperty(prop)) {
@@ -40,31 +39,39 @@ var encodeCycles = arg => {
         const value = inner(arg[prop]);
         currentPath = currentPath.slice(0, -escaped.length);
 
-        /*
-        if(value !== arg[prop]) {
-          isDifferent = true;
-        }
-        */
-
         clone[prop] = value;
       }
     }
-
-    /*
-    if(!isDifferent) {
-      return arg;
-    }
-    */
 
     return clone;
   };
 
   return inner(arg);
-};;
+};
 
-var jsonify = arg => {console.log(JSON.stringify(encodeCycles(arg), null, 2))}
+var jsonify = arg => console.log(JSON.stringify(encodeCycles(arg), null, 2));
 
 var template = require('./template.js');
+
+const makeObject = str => str.
+  split(",").
+  reduce(function(a,b,c){a[b]=c;return a},{});
+
+var swaggerV2Props = makeObject(
+  'swagger,info,host,basePath,'+
+  'schemes,consumes,produces,'+
+  'definitions,parameters,responses,'+
+  'securityDefinitions,security,'+
+  'tags,externalDocs'
+);
+
+var methodProps = makeObject(
+  'tags,summary,description,'+
+  'externalDocs,operationId,'+
+  'consumes,produces,parameters,'+
+  'responses,schemes,deprecated,'+
+  'security'
+);
 
 class ServerlessPlugin {
   constructor(serverless, options) {
@@ -119,14 +126,15 @@ class ServerlessPlugin {
   _generateDocs() {
     const retval = template();
 
-    const info = _.get(this, 'service.custom.documentation.info');
- 
+    const documentation = _.pickBy(
+        _.get(this, 'service.custom.documentation'),
+        (value, key) => swaggerV2Props.hasOwnProperty(key)
+      );
+
     //fs.writeFileSync('./output.json', JSON.stringify(encodeCycles(this.serverless), null, 2));
 
     //get the header properties
-    Object.assign(retval.info, info);
-
-    retval.paths = {};
+    Object.assign(retval, documentation);
 
     //get each if the paths, then extract the documentation fields into the in memory swagger file
 
@@ -135,61 +143,24 @@ class ServerlessPlugin {
     //pull lambda function handlers out of serverlesses ridiculous structure
     Object.
       entries(_.get(this, 'service.functions')).
-      map(x => x[1].events).
-      forEach(y => y.forEach(z => {
-        if(z.hasOwnProperty('http')) {
-          httpList.push(Object.assign({}, z.http));
+      forEach(x => _.get(x, '[1].events').
+      forEach(y => {
+        if(y.hasOwnProperty('http')) {
+          httpList.push(Object.assign({}, y.http));
         }
       }));
 
     httpList.forEach(item => {
-      let description;
-      let parameters;
-      let responses;
-
-      const documentation = _.get(item, 'documentation');
-
-      if(documentation) {
-        description = documentation.description;
-        
-        parameters = [].
-          //get the path parameters
-          concat((documentation.pathParams || []).map(item => {
-            const retval = Object.assign({}, item);
-            retval['in'] = "path";
-            return retval;
-          })).
-
-          //get the query paramenters
-          concat((documentation.queryParams || []).map(item => {
-            const retval = Object.assign({}, item);
-            retval['in'] = "query";
-            return retval;
-          }));
-
-        //get the method responses types
-        responses = _.keyBy(
-          Object.assign({}, documentation.methodResponses),
-          'statusCode'
-        );
-
-        //remove the statusCode properties
-        Object.entries(responses).forEach(item => {
-          delete item[1].statusCode;
-        });
-      }
-
       if(!retval.paths.hasOwnProperty(item.path)) {
         retval.paths[item.path] = {};
       }
 
-      retval.paths[item.path][item.method] = {
-        description,
-        produces: ["application/json"],
-        parameters,
-        responses
-      }; 
+      const method  = _.pickBy(
+          _.get(item, 'documentation'),
+          (value, key) => methodProps.hasOwnProperty(key)
+        );
 
+      retval.paths[item.path][item.method] = method;
     });
 
     jsonify(retval);
