@@ -94,8 +94,7 @@ class ServerlessPlugin {
     const httpList = [];
 
     //pull lambda function handlers out of serverlesses ridiculous structure
-    Object.
-      entries(_.get(this, 'service.functions')).
+    _.toPairs(_.get(this, 'service.functions')).
       forEach(x => _.get(x, '[1].events').
       forEach(y => {
         if(y.hasOwnProperty('http')) {
