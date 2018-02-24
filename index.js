@@ -5,10 +5,72 @@ var _ = require('lodash');
 var fs = require('fs');
 var mkdirpSync = require('mkdirpsync');
 var template = require('./template.js');
+const download = require('download');
 
 const makeObject = str => str.
   split(",").
   reduce(function(a,b,c){a[b]=c;return a},{});
+
+const uriToDef = data => {
+  const main = JSON.parse(data);
+
+  if(!(main.hasOwnProperty('$schema') && main.hasOwnProperty('title'))) {
+    throw new Error("Not json schema file with a title");
+  }
+
+  //remove the Schema attribute
+  delete main.$schema;
+
+  //remove title attribute
+  const title = main.title;
+  delete main.title;
+
+  //remove the definitions
+  const hasDefinitions = main.hasOwnProperty('definitions');
+  const definitions = hasDefinitions ? main.definitions : {};
+
+  if(!main.hasOwnProperty('$ref')) {
+    if(hasDefinitions) {
+      delete main.definitions;
+    }
+
+    definitions[title] = main;
+  }
+  else if (((main.$ref = String(main.$ref)) || !0) && main.$ref.indexOf('#/') !== 0) {
+    throw new Error("only internal JSON References are supported for now");
+  }
+  else {
+    const $ref = main.$ref.substring(2).replace('/','.');
+    delete main.$ref;
+
+    let ref = _.get(main, $ref, undefined);
+    if(ref === undefined) {
+      throw new Error('ref not found: '+ $ref);
+    }
+
+    //deep clone object
+    ref = JSON.parse(JSON.stringify(ref));
+
+    //remove main schemas definitions before overwriting fields
+    if(hasDefinitions) {
+      delete main.definitions;
+    }
+
+    //overwrite original fields
+    for(let key in main) {
+      if(main.hasOwnProperty(key)) {
+        ref[key] = main[key];
+      }
+    }
+
+    definitions[title] = ref;
+  }
+
+  return definitions;
+};
+
+const urisToDefs = uri =>
+  download(uri).then(uriToDef);
 
 var swaggerV2Props = makeObject(
   'swagger,info,host,basePath,'+
@@ -43,7 +105,7 @@ class ServerlessPlugin {
         // add start nested options
         commands: {
           start: {
-            usage: 'Generates a local swagger v2 file from serverlees.yml annotations',
+            usage: 'Generates a local swagger v2 file from serverless.yml annotations',
           },
         },
         options: {
@@ -67,7 +129,7 @@ class ServerlessPlugin {
   start() {
     this._checkVersion();
 
-    this._generateDocs();
+    return this._generateDocs();
   }
 
   _checkVersion() {
@@ -113,6 +175,25 @@ class ServerlessPlugin {
         );
     });
 
+    //resolve extra JSON schemas from urls without Serverlesses broken intervention
+    const definitionUris = _.get(this, 'service.custom.documentation.definitionUris');
+
+    if(definitionUris && Array.isArray(definitionUris)) {
+      return Promise.
+        all(definitionUris.map(urisToDefs)).
+        then(objects => {
+          objects.forEach(item => {
+            _.assign(retval.definitions, item);
+          });
+
+          return this._complete(retval);
+        });
+    }
+
+    return this._complete(retval);
+  }
+
+  _complete(retval) {
     const format = this.options.format || 'json';
     let output, outputName;
 
@@ -135,6 +216,8 @@ class ServerlessPlugin {
     fs.writeFileSync(resolved, output);
 
     console.log(`'${resolved}' file generated!`);
+
+    return Promise.resolve(true);
   }
 };
 
